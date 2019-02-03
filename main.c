@@ -146,9 +146,9 @@ int main(void) {
     sw_init();
     sides_init();
     matrix_init();
-    start_timer();
 
     activeAnimation = &dot;
+    start_timer();
 
     for (;;) {}
 }
