@@ -37,18 +37,22 @@ volatile struct {
         uint16_t x;
         uint16_t y;
         uint16_t z;
-    } data;
+    } ring[32];
+    uint8_t ringpos;
+
     uint8_t buffer[16];
-    uint8_t pos;
+    uint8_t bufpos;
     uint8_t slept;
 } state;
 
 void state_init() {
     state.id = SLEEPING;
-    state.data.x = 0;
-    state.data.y = 0;
-    state.data.z = 0;
-    state.pos = 0;
+    for (uint8_t i = 0; i < 32; i++) {
+        state.ring[i].x = 0;
+        state.ring[i].y = 0;
+        state.ring[i].z = 0;
+    }
+    state.ringpos = 0;
 }
 
 void uart_init() {
@@ -96,8 +100,8 @@ ISR(USART0_TX_vect) {
 }
 
 ISR(USART0_UDRE_vect) {
-    if (state.buffer[state.pos] != 0) {
-        UDR0 = state.buffer[state.pos++];
+    if (state.buffer[state.bufpos] != 0) {
+        UDR0 = state.buffer[state.bufpos++];
     } else {
         UCSR0B &= ~(1 << UDRIE0);
     }
@@ -110,27 +114,44 @@ ISR(ADC_vect) {
 
     switch (state.id) {
         case MEASURING_X:
-            state.data.x = result;
+            state.ring[state.ringpos].x = result;
             state.id = MEASURING_Y;
             adc_start(ADMUX_MUX_ACCY);
             break;
         case MEASURING_Y:
-            state.data.y = result;
+            state.ring[state.ringpos].y = result;
             state.id = MEASURING_Z;
             adc_start(ADMUX_MUX_ACCZ);
             break;
         case MEASURING_Z:
-            state.data.z = result;
+            state.ring[state.ringpos++].z = result;
+            if (state.ringpos == 32) {
+                state.ringpos = 0;
+            }
             state.id = SENDING;
 
-            state.pos = format_uint16(state.data.x, state.buffer);
-            state.buffer[state.pos++] = ',';
-            state.pos += format_uint16(state.data.y, state.buffer + state.pos);
-            state.buffer[state.pos++] = ',';
-            state.pos += format_uint16(state.data.z, state.buffer + state.pos);
-            state.buffer[state.pos++] = '\n';
-            state.buffer[state.pos] = 0;
-            state.pos = 0;
+            uint32_t total = 0;
+            for (uint8_t i = 0; i < 32; i++) {
+                total += state.ring[i].x;
+            }
+            state.bufpos = format_uint16((uint16_t) (total / 32), state.buffer);
+            state.buffer[state.bufpos++] = ',';
+
+            total = 0;
+            for (uint8_t i = 0; i < 32; i++) {
+                total += state.ring[i].y;
+            }
+            state.bufpos += format_uint16((uint16_t) (total / 32), state.buffer + state.bufpos);
+            state.buffer[state.bufpos++] = ',';
+
+            total = 0;
+            for (uint8_t i = 0; i < 32; i++) {
+                total += state.ring[i].z;
+            }
+            state.bufpos += format_uint16((uint16_t) (total / 32), state.buffer + state.bufpos);
+            state.buffer[state.bufpos++] = '\n';
+            state.buffer[state.bufpos] = 0;
+            state.bufpos = 0;
 
             // enable UART interrupts
             UCSR0B |= 1 << TXCIE0 | 1 << UDRIE0;
