@@ -8,17 +8,56 @@
 // ADC prescaler
 #define ADCSRA_ADPS_8 ((uint8_t)0b011)
 
-uint8_t format_uint16(uint16_t input, volatile uint8_t *output) {
+/*
+ *    -1g     0g    +1g
+ * == 475 == 690 == 913 ==> X
+ * == 490 == 705 == 914 ==> Y
+ * == 492 == 720 == 922 ==> Z
+ */
+
+int16_t scale_to_mg(int16_t value, int16_t negative, int16_t zero, int16_t positive) {
+    if (value > zero) {
+        int32_t scale = ((int32_t)positive - zero);
+        int32_t v = ((int32_t)value - zero) * 1000;
+        return (int16_t)(v / scale);
+    } else  if (value < zero) {
+        int32_t scale = ((int32_t)zero - negative);
+        int32_t v = ((int32_t)value - zero) * 1000;
+        return (int16_t)(v / scale);
+    } else {
+        return 0;
+    }
+}
+
+int16_t x_to_mg(int16_t value) {
+    return scale_to_mg(value, 475, 690, 913);
+}
+
+int16_t y_to_mg(int16_t value) {
+    return scale_to_mg(value, 490, 705, 914);
+}
+
+int16_t z_to_mg(int16_t value) {
+    return scale_to_mg(value, 492, 720, 922);
+}
+
+uint8_t format_int16(int16_t input, volatile uint8_t *output) {
     uint8_t written = 0;
-    for (uint16_t i = 10000; i > 0; i = i / (uint16_t) 10) {
-        uint8_t d = (uint8_t) (input / i);
-        if (d > 0 || written > 0) {
+    int16_t start = 10000;
+    if (input < 0) {
+        start = -10000;
+        output[written++] = '-';
+    }
+
+    for (int16_t i = start; i != 0; i = i / (int16_t) 10) {
+        int8_t d = (int8_t) (input / i);
+        if (d > 0 || written > 1 || (written > 0 && output[0] != '-')) {
             output[written++] = (uint8_t) '0' + d;
         }
         input = input % i;
     }
 
-    if (!written) {
+    if (written < 1 || (written < 2 && output[0] == '-')) {
         output[written++] = '0';
     }
 
@@ -40,7 +79,7 @@ volatile struct {
     } ring[32];
     uint8_t ringpos;
 
-    uint8_t buffer[16];
+    uint8_t buffer[24];
     uint8_t bufpos;
     uint8_t slept;
 } state;
@@ -72,7 +111,7 @@ void timer_init() {
     // CTC
     TCCR0A = 0b10;
     // (1 / 7812.5Hz) * 156 => 20ms
-    OCR0A = 156;
+    OCR0A = 255;
     // 8Mhz / 1024 = 7812.5Hz
     TCCR0B = 0b101;
 
@@ -134,23 +173,27 @@ ISR(ADC_vect) {
             for (uint8_t i = 0; i < 32; i++) {
                 total += state.ring[i].x;
             }
-            state.bufpos = format_uint16((uint16_t) (total / 32), state.buffer);
+            total /= 32;
+            state.bufpos = format_int16(x_to_mg((int16_t)total), state.buffer);
             state.buffer[state.bufpos++] = ',';
 
             total = 0;
             for (uint8_t i = 0; i < 32; i++) {
                 total += state.ring[i].y;
             }
-            state.bufpos += format_uint16((uint16_t) (total / 32), state.buffer + state.bufpos);
+            total /= 32;
+            state.bufpos += format_int16(y_to_mg((int16_t)total), state.buffer + state.bufpos);
             state.buffer[state.bufpos++] = ',';
 
             total = 0;
             for (uint8_t i = 0; i < 32; i++) {
                 total += state.ring[i].z;
             }
-            state.bufpos += format_uint16((uint16_t) (total / 32), state.buffer + state.bufpos);
+            total /= 32;
+            state.bufpos += format_int16(z_to_mg((int16_t)total), state.buffer + state.bufpos);
             state.buffer[state.bufpos++] = '\n';
-            state.buffer[state.bufpos] = 0;
+            state.buffer[state.bufpos++] = 0;
+
             state.bufpos = 0;
 
             // enable UART interrupts
