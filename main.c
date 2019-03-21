@@ -15,32 +15,6 @@
  * == 492 == 720 == 922 ==> Z
  */
 
-int16_t scale_to_mg(int16_t value, int16_t negative, int16_t zero, int16_t positive) {
-    if (value > zero) {
-        int32_t scale = ((int32_t)positive - zero);
-        int32_t v = ((int32_t)value - zero) * 1000;
-        return (int16_t)(v / scale);
-    } else  if (value < zero) {
-        int32_t scale = ((int32_t)zero - negative);
-        int32_t v = ((int32_t)value - zero) * 1000;
-        return (int16_t)(v / scale);
-    } else {
-        return 0;
-    }
-}
-
-int16_t x_to_mg(int16_t value) {
-    return scale_to_mg(value, 475, 690, 913);
-}
-
-int16_t y_to_mg(int16_t value) {
-    return scale_to_mg(value, 490, 705, 914);
-}
-
-int16_t z_to_mg(int16_t value) {
-    return scale_to_mg(value, 492, 720, 922);
-}
-
 uint8_t format_int16(int16_t input, volatile uint8_t *output) {
     uint8_t written = 0;
     int16_t start = 10000;
@@ -76,26 +50,21 @@ volatile struct {
         uint16_t x;
         uint16_t y;
         uint16_t z;
-    } ring[32];
-    uint8_t ringpos;
-
-    uint8_t buffer[24];
+    } data;
+    uint8_t buffer[64];
     uint8_t bufpos;
     uint8_t slept;
 } state;
 
 void state_init() {
     state.id = SLEEPING;
-    for (uint8_t i = 0; i < 32; i++) {
-        state.ring[i].x = 0;
-        state.ring[i].y = 0;
-        state.ring[i].z = 0;
-    }
-    state.ringpos = 0;
+    state.data.x = 0;
+    state.data.y = 0;
+    state.data.z = 0;
 }
 
 void uart_init() {
-    const uint16_t baud_setting = (F_CPU / 4 / 9600 - 1) / 2;;
+    const uint16_t baud_setting = (F_CPU / 4 / 14400 - 1) / 2;
     UBRR0H = (uint8_t) (baud_setting >> 8);
     UBRR0L = (uint8_t) baud_setting;
     UCSR0A |= 1 << U2X0;
@@ -111,7 +80,7 @@ void timer_init() {
     // CTC
     TCCR0A = 0b10;
     // (1 / 7812.5Hz) * 156 => 20ms
-    OCR0A = 255;
+    OCR0A = 77;
     // 8Mhz / 1024 = 7812.5Hz
     TCCR0B = 0b101;
 
@@ -126,6 +95,8 @@ void adc_start(uint8_t input) {
 }
 
 int main() {
+    DDRB = 1 << 2;
+
     state_init();
     adc_init();
     uart_init();
@@ -153,47 +124,26 @@ ISR(ADC_vect) {
 
     switch (state.id) {
         case MEASURING_X:
-            state.ring[state.ringpos].x = result;
+            state.data.x = result;
             state.id = MEASURING_Y;
             adc_start(ADMUX_MUX_ACCY);
             break;
         case MEASURING_Y:
-            state.ring[state.ringpos].y = result;
+            state.data.y = result;
             state.id = MEASURING_Z;
             adc_start(ADMUX_MUX_ACCZ);
             break;
         case MEASURING_Z:
-            state.ring[state.ringpos++].z = result;
-            if (state.ringpos == 32) {
-                state.ringpos = 0;
-            }
+            state.data.z = result;
             state.id = SENDING;
 
-            uint32_t total = 0;
-            for (uint8_t i = 0; i < 32; i++) {
-                total += state.ring[i].x;
-            }
-            total /= 32;
-            state.bufpos = format_int16(x_to_mg((int16_t)total), state.buffer);
+            state.bufpos = format_int16((int16_t) (state.data.x), state.buffer);
             state.buffer[state.bufpos++] = ',';
-
-            total = 0;
-            for (uint8_t i = 0; i < 32; i++) {
-                total += state.ring[i].y;
-            }
-            total /= 32;
-            state.bufpos += format_int16(y_to_mg((int16_t)total), state.buffer + state.bufpos);
+            state.bufpos += format_int16((int16_t) (state.data.y), state.buffer + state.bufpos);
             state.buffer[state.bufpos++] = ',';
-
-            total = 0;
-            for (uint8_t i = 0; i < 32; i++) {
-                total += state.ring[i].z;
-            }
-            total /= 32;
-            state.bufpos += format_int16(z_to_mg((int16_t)total), state.buffer + state.bufpos);
+            state.bufpos += format_int16((int16_t) (state.data.z), state.buffer + state.bufpos);
             state.buffer[state.bufpos++] = '\n';
             state.buffer[state.bufpos++] = 0;
-
             state.bufpos = 0;
 
             // enable UART interrupts
