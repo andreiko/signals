@@ -8,7 +8,8 @@
 typedef struct {
     uint8_t rows[FRAME_ROWS];
     uint8_t duration;
-    uint8_t sides;
+    uint8_t sides_left:3;
+    uint8_t sides_right:3;
 } Frame;
 
 typedef struct {

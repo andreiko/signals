@@ -6,7 +6,7 @@ set(CMAKE_VERBOSE_MAKEFILE 1)
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_COMPILER "/usr/local/bin/avr-gcc")
 
-set(MMCU atmega328p)
+set(MMCU atmega328pb)
 set(ARCH_FLAGS "\
         -mmcu=${MMCU} \
 ")

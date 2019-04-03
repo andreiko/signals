@@ -5,8 +5,13 @@
 #include "animations.h"
 
 // SIDES
-#define SIDES_PORT PORTC
-#define SIDES_DDR DDRC
+#define SIDES_LEFT_PORT PORTB
+#define SIDES_LEFT_DDR DDRB
+#define SIDES_LEFT_SHIFT 0
+
+#define SIDES_RIGHT_PORT PORTC
+#define SIDES_RIGHT_DDR DDRC
+#define SIDES_RIGHT_SHIFT 2
 
 // MATRIX
 #define MATRIX_PORT PORTD
@@ -22,8 +27,13 @@ volatile uint8_t activeRow;
 volatile uint8_t frameExposure;
 
 void sides_init() {
-    SIDES_DDR |= 0b111111;
-    SIDES_PORT &= ~(0b111111);
+    uint8_t bits = 0b111 << SIDES_LEFT_SHIFT;
+    SIDES_LEFT_DDR |= bits;
+    SIDES_LEFT_PORT &= ~(bits);
+
+    bits = 0b111 << SIDES_RIGHT_SHIFT;
+    SIDES_RIGHT_DDR |= bits;
+    SIDES_RIGHT_PORT &= ~(bits);
 }
 
 void matrix_init() {
@@ -127,7 +137,8 @@ ISR(TIMER0_COMPA_vect) {
     matrix_shift(hi);
     matrix_store();
 
-    SIDES_PORT = activeAnimation->frames[activeFrame].sides;
+    SIDES_LEFT_PORT = activeAnimation->frames[activeFrame].sides_left << SIDES_LEFT_SHIFT;
+    SIDES_RIGHT_PORT = activeAnimation->frames[activeFrame].sides_right << SIDES_RIGHT_SHIFT;
 
     if (++activeRow >= FRAME_ROWS) {
         activeRow = 0;

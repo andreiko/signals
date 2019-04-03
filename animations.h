@@ -8,7 +8,8 @@ Animation turningLeft = {
     .frames=(Frame[4]) {
         {
             .duration=32,
-            .sides=0b001000,
+            .sides_left=0b100,
+            .sides_right=0b000,
             .rows={
                 0b00001, // o o o o o
                 0b00010, //  o o o o x
@@ -23,7 +24,8 @@ Animation turningLeft = {
         },
         {
             .duration=32,
-            .sides=0b010000,
+            .sides_left=0b010,
+            .sides_right=0b000,
             .rows={
                 0b00010, // o o o o o
                 0b00100, //  o o o o x
@@ -38,7 +40,8 @@ Animation turningLeft = {
         },
         {
             .duration=32,
-            .sides=0b100000,
+            .sides_left=0b001,
+            .sides_right=0b000,
             .rows={
                 0b00100, // o o o o o
                 0b01000, //  o o o o x
@@ -53,7 +56,8 @@ Animation turningLeft = {
         },
         {
             .duration=32,
-            .sides=0b000000,
+            .sides_left=0b000,
+            .sides_right=0b000,
             .rows={
                 0b00000, // o o o o o
                 0b00000, //  o o o o x
@@ -74,7 +78,8 @@ Animation turningRight = {
     .frames=(Frame[4]) {
         {
             .duration=32,
-            .sides=0b000001,
+            .sides_left=0b000,
+            .sides_right=0b001,
             .rows={
                 0b10000, // o o o o o
                 0b10000, //  o o o o x
@@ -89,7 +94,8 @@ Animation turningRight = {
         },
         {
             .duration=32,
-            .sides=0b000010,
+            .sides_left=0b000,
+            .sides_right=0b010,
             .rows={
                 0b01000, // o o o o o
                 0b01000, //  o o o o x
@@ -104,7 +110,8 @@ Animation turningRight = {
         },
         {
             .duration=32,
-            .sides=0b000100,
+            .sides_left=0b000,
+            .sides_right=0b100,
             .rows={
                 0b00100, // o o o o o
                 0b00100, //  o o o o x
@@ -119,7 +126,8 @@ Animation turningRight = {
         },
         {
             .duration=32,
-            .sides=0b000000,
+            .sides_left=0b000,
+            .sides_right=0b000,
             .rows={
                 0b00000, // o o o o o
                 0b00000, //  o o o o x
@@ -141,7 +149,8 @@ Animation dot = {
     .frames=(Frame[1]) {
         {
             .duration=255,
-            .sides=0b000000,
+            .sides_left=0b000,
+            .sides_right=0b000,
             .rows={
                 0b00000, // o o o o o
                 0b00000, //  o o o o x
