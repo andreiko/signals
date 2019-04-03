@@ -1,4 +1,5 @@
 #include <avr/interrupt.h>
+#include "sd.h"
 
 // ADC references and inputs
 #define ADMUX_REFS_INTERNAL11V ((uint8_t)0b11)
@@ -6,7 +7,7 @@
 #define ADMUX_MUX_ACCY ((uint8_t)0b0000)
 #define ADMUX_MUX_ACCZ ((uint8_t)0b0001)
 // ADC prescaler
-#define ADCSRA_ADPS_8 ((uint8_t)0b011)
+#define ADCSRA_ADPS_64 ((uint8_t)0b110)
 
 /*
  *    -1g     0g    +1g
@@ -15,75 +16,79 @@
  * == 492 == 720 == 922 ==> Z
  */
 
-uint8_t format_int16(int16_t input, volatile uint8_t *output) {
-    uint8_t written = 0;
-    int16_t start = 10000;
-    if (input < 0) {
-        start = -10000;
-        output[written++] = '-';
-    }
-
-    for (int16_t i = start; i != 0; i = i / (int16_t) 10) {
-        int8_t d = (int8_t) (input / i);
-        if (d > 0 || written > 1 || (written > 0 && output[0] != '-')) {
-            output[written++] = (uint8_t) '0' + d;
-        }
-        input = input % i;
-    }
-
-    if (written < 1 || (written < 2 && output[0] == '-')) {
-        output[written++] = '0';
-    }
-
-    return written;
-}
+#define RING_CAPACITY 512
 
 volatile struct {
     enum {
-        SLEEPING,
+        IDLE,
         MEASURING_X,
         MEASURING_Y,
-        MEASURING_Z,
-        SENDING
-    } id;
+        MEASURING_Z
+    } adc;
     struct {
-        uint16_t x;
-        uint16_t y;
-        uint16_t z;
-    } data;
-    uint8_t buffer[64];
-    uint8_t bufpos;
-    uint8_t slept;
+        uint8_t data[RING_CAPACITY];
+        uint16_t size;
+        uint16_t next_write;
+        uint16_t next_read;
+    } ring;
+    enum {
+        TX_START, // sending multi-block data token (0xfc)
+        TX_PROGRESS, // sending ring contents
+        TX_EMPTY, // sending ring contents
+        TX_CRC, // sending 2 fake crc16 bytes
+        PRG_WAITING, // waiting for 0xff response
+    } sd;
+    uint16_t sd_tx_count;
 } state;
 
-void state_init() {
-    state.id = SLEEPING;
-    state.data.x = 0;
-    state.data.y = 0;
-    state.data.z = 0;
+uint8_t ring_read() {
+    uint8_t r = state.ring.data[state.ring.next_read];
+    state.ring.size--;
+    if (++state.ring.next_read >= RING_CAPACITY) state.ring.next_read = 0;
+    return r;
 }
 
-void uart_init() {
-    const uint16_t baud_setting = (F_CPU / 4 / 14400 - 1) / 2;
-    UBRR0H = (uint8_t) (baud_setting >> 8);
-    UBRR0L = (uint8_t) baud_setting;
-    UCSR0A |= 1 << U2X0;
-    UCSR0B |= 1 << TXEN0;
+void tx_progress(uint8_t byte) {
+    SPDR0 = byte;
+    if (++state.sd_tx_count >= 512) {
+        state.sd_tx_count = 0;
+        state.sd = TX_CRC;
+    }
+}
+
+void ring_add(uint8_t byte) {
+    PORTD ^= 1 << PD1;
+    if (state.sd == TX_EMPTY) {
+        state.sd = TX_PROGRESS;
+        tx_progress(byte);
+        return;
+    }
+
+    state.ring.data[state.ring.next_write] = byte;
+    state.ring.size++;
+    if (++state.ring.next_write >= RING_CAPACITY) state.ring.next_write = 0;
+}
+
+void state_init() {
+    state.adc = IDLE;
+    state.ring.size = 0;
+    state.ring.next_write = 0;
+    state.ring.next_read = 0;
 }
 
 void adc_init() {
-    // prescaler: 1Mhz / 8 = 125kHz
-    ADCSRA = 1 << ADEN | 1 << ADIE | ADCSRA_ADPS_8 << ADPS0;
+    // prescaler: 8Mhz / 64 = 125kHz
+    ADCSRA = 1 << ADEN | 1 << ADIE | ADCSRA_ADPS_64 << ADPS0;
 }
 
 void timer_init() {
     // CTC
     TCCR0A = 0b10;
-    // (1 / 7812.5Hz) * 156 => 20ms
-    OCR0A = 77;
+    // 7812.5Hz * 78 ~= 10ms
+    OCR0A = 78;
     // 8Mhz / 1024 = 7812.5Hz
     TCCR0B = 0b101;
-
+    // enable "compare A" interrupt
     TIMSK0 |= 1 << OCIE0A;
 }
 
@@ -95,60 +100,44 @@ void adc_start(uint8_t input) {
 }
 
 int main() {
-    DDRB = 1 << 2;
-
+    DDRD = 1 << PD1 | 1 << PD2 | 1 << PD3;
     state_init();
     adc_init();
-    uart_init();
-    timer_init();
+    spi_init();
+    if (!sd_init()) return 1;
+
+    // multiple block write starting at 0x02d00000 (sector 0x16800)
+    sd_send_command8(25, (uint8_t[4]) {0, 1, 0x68, 0});
+    if (sd_wait_response() != 0) return 1;
+
     sei();
+    spi_enable_interrupt();
+
+    state.sd = TX_START;
+    SPDR0 = 0xff;
+
+    timer_init();
     for (;;);
-}
-
-ISR(USART0_TX_vect) {
-    state.id = SLEEPING;
-}
-
-ISR(USART0_UDRE_vect) {
-    if (state.buffer[state.bufpos] != 0) {
-        UDR0 = state.buffer[state.bufpos++];
-    } else {
-        UCSR0B &= ~(1 << UDRIE0);
-    }
 }
 
 // ADC conversion complete
 ISR(ADC_vect) {
+    // ADCL should be read first
     uint8_t low = ADCL;
-    uint16_t result = (ADCH << 8) + low;
+    ring_add(ADCH);
+    ring_add(low);
 
-    switch (state.id) {
+    switch (state.adc) {
         case MEASURING_X:
-            state.data.x = result;
-            state.id = MEASURING_Y;
+            state.adc = MEASURING_Y;
             adc_start(ADMUX_MUX_ACCY);
             break;
         case MEASURING_Y:
-            state.data.y = result;
-            state.id = MEASURING_Z;
+            state.adc = MEASURING_Z;
             adc_start(ADMUX_MUX_ACCZ);
             break;
         case MEASURING_Z:
-            state.data.z = result;
-            state.id = SENDING;
-
-            state.bufpos = format_int16((int16_t) (state.data.x), state.buffer);
-            state.buffer[state.bufpos++] = ',';
-            state.bufpos += format_int16((int16_t) (state.data.y), state.buffer + state.bufpos);
-            state.buffer[state.bufpos++] = ',';
-            state.bufpos += format_int16((int16_t) (state.data.z), state.buffer + state.bufpos);
-            state.buffer[state.bufpos++] = '\n';
-            state.buffer[state.bufpos++] = 0;
-            state.bufpos = 0;
-
-            // enable UART interrupts
-            UCSR0B |= 1 << TXCIE0 | 1 << UDRIE0;
-
+            state.adc = IDLE;
             break;
         default:
             break;
@@ -156,6 +145,44 @@ ISR(ADC_vect) {
 }
 
 ISR(TIMER0_COMPA_vect) {
-    state.id = MEASURING_X;
+    // pad with 0 zeros
+    ring_add(0);
+    ring_add(0);
+    state.adc = MEASURING_X;
     adc_start(ADMUX_MUX_ACCX);
+}
+
+ISR(SPI0_STC_vect) {
+    switch (state.sd) {
+        case TX_START:
+            state.sd = TX_PROGRESS;
+            state.sd_tx_count = 0;
+            SPDR0 = 0xfc;
+            break;
+        case TX_PROGRESS:
+            if (!state.ring.size) {
+                state.sd = TX_EMPTY;
+                return;
+            }
+            tx_progress(ring_read());
+            break;
+        case TX_CRC:
+            if (state.sd_tx_count++ < 2) {
+                SPDR0 = 0x55;
+                return;
+            }
+            spi_slow();
+            SPDR0 = 0xff;
+            state.sd = PRG_WAITING;
+            break;
+        case PRG_WAITING:
+            if (SPDR0 == 0xff) {
+                spi_full_speed();
+                state.sd = TX_START;
+            }
+            SPDR0 = 0xff;
+            break;
+        default:
+            break;
+    }
 }

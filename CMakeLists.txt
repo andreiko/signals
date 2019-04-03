@@ -14,7 +14,6 @@ set(ARCH_FLAGS "\
 set(CMAKE_C_FLAGS "${ARCH_FLAGS} \
         -DF_CPU=8000000UL \
         -Wall \
-        -Werror \
         -std=gnu99 \
         -fdata-sections \
         -ffunction-sections \
@@ -30,7 +29,7 @@ set(CMAKE_EXE_LINKER_FLAGS "${ARCH_FLAGS} \
 
 set(CMAKE_C_LINK_EXECUTABLE "${CMAKE_C_COMPILER} <LINK_FLAGS> <OBJECTS> -o <TARGET>")
 
-add_executable(${CMAKE_PROJECT_NAME} main.c)
+add_executable(${CMAKE_PROJECT_NAME} main.c sd.c)
 
 
 add_custom_command(
