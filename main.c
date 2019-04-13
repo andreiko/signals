@@ -120,10 +120,6 @@ void start_timer() {
 ISR(TIMER0_COMPA_vect) {
     sw_update();
 
-    if (activeAnimation == 0) {
-        return;
-    }
-
     uint8_t hi = 0, lo = ~(activeAnimation->frames[activeFrame].rows[activeRow]) & 0b11111;
     if (activeRow > 0) {
         hi = 1 << (activeRow - 1);
