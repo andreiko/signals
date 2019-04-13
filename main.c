@@ -108,14 +108,13 @@ void sw_update() {
 }
 
 void start_timer() {
-    TCCR0A = 2; // GWM = CTC
-    TCCR0B = 3; // prescaler: IOclk(1MHz) / 64
-    OCR0A = 17; // 920 Hz / 9 = 102 Hz / scan
+    TCCR0A = 2; // WGM = CTC
+    TCCR0B = 3; // prescaler: IOclk(1MHz) / 64 => 15625Hz
+    OCR0A = 15; // 15625Hz / (15 + 1) => 976.5Hz
+    // refresh rate: 976.5Hz / 9 rows => 108.5Hz
 
     // enable TIMER0_COMPA interrupt
     TIMSK0 = 1 << OCIE0A;
-    // enable interrupts
-    sei();
 }
 
 ISR(TIMER0_COMPA_vect) {
@@ -159,6 +158,9 @@ int main(void) {
 
     activeAnimation = &idle;
     start_timer();
+
+    // enable interrupts
+    sei();
 
     for (;;) {}
 }
