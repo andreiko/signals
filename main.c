@@ -1,25 +1,24 @@
 #include <avr/io.h>
 #include <avr/interrupt.h>
 
-#include "frame.h"
 #include "animations.h"
 
 // SIDES
-#define SIDES_LEFT_PORT PORTB
-#define SIDES_LEFT_DDR DDRB
-#define SIDES_LEFT_SHIFT 0
+#define SIDES_LEFT_PORT PORTD
+#define SIDES_LEFT_DDR DDRD
+#define SIDES_LEFT_SHIFT 5
 
-#define SIDES_RIGHT_PORT PORTC
-#define SIDES_RIGHT_DDR DDRC
-#define SIDES_RIGHT_SHIFT 2
+#define SIDES_RIGHT_PORT PORTB
+#define SIDES_RIGHT_DDR DDRB
+#define SIDES_RIGHT_SHIFT 0
 
 // MATRIX
 #define MATRIX_PORT PORTD
 #define MATRIX_DDR DDRD
-#define MATRIX_EN 0
-#define MATRIX_DATA 1
-#define MATRIX_SHIFT 2
-#define MATRIX_STORE 3
+#define MATRIX_EN PD0
+#define MATRIX_DATA PD1
+#define MATRIX_SHIFT PD2
+#define MATRIX_STORE PD3
 
 volatile Animation *activeAnimation = 0;
 volatile uint8_t activeFrame;
@@ -27,13 +26,11 @@ volatile uint8_t activeRow;
 volatile uint8_t frameExposure;
 
 void sides_init() {
-    uint8_t bits = 0b111 << SIDES_LEFT_SHIFT;
-    SIDES_LEFT_DDR |= bits;
-    SIDES_LEFT_PORT &= ~(bits);
+    SIDES_LEFT_DDR |= 0b111 << SIDES_LEFT_SHIFT;
+    SIDES_LEFT_PORT &= ~(0b111 << SIDES_LEFT_SHIFT);
 
-    bits = 0b111 << SIDES_RIGHT_SHIFT;
-    SIDES_RIGHT_DDR |= bits;
-    SIDES_RIGHT_PORT &= ~(bits);
+    SIDES_RIGHT_DDR |= 0b111 << SIDES_RIGHT_SHIFT;
+    SIDES_RIGHT_PORT &= ~(0b111 << SIDES_RIGHT_SHIFT);
 }
 
 void matrix_init() {
@@ -60,16 +57,18 @@ void matrix_store() {
 
 // SWITCH
 
-#define SW_DDR DDRD
-#define SW_INP PIND
-#define SW_PORT PORTD
-#define SW_INPUT_LEFT 6
-#define SW_INPUT_RIGHT 7
+#define SW_DDR DDRB
+#define SW_INP PINB
+#define SW_PORT PORTB
+#define SW_INPUT_LEFT PB6
+#define SW_INPUT_RIGHT PB7
 
-#define SW_POS_UNDEFINED 0
-#define SW_POS_MIDDLE 1
-#define SW_POS_LEFT 2
-#define SW_POS_RIGHT 3
+enum {
+    SW_POS_UNDEFINED,
+    SW_POS_MIDDLE,
+    SW_POS_LEFT,
+    SW_POS_RIGHT
+};
 
 volatile uint8_t currentSwitch = SW_POS_UNDEFINED;
 
@@ -101,7 +100,7 @@ void sw_update() {
     } else if (currentSwitch != SW_POS_MIDDLE) {
         currentSwitch = SW_POS_MIDDLE;
 
-        activeAnimation = &dot;
+        activeAnimation = &idle;
         activeFrame = 0;
         activeRow = 0;
         frameExposure = 0;
@@ -137,8 +136,8 @@ ISR(TIMER0_COMPA_vect) {
     matrix_shift(hi);
     matrix_store();
 
-    SIDES_LEFT_PORT = activeAnimation->frames[activeFrame].sides_left << SIDES_LEFT_SHIFT;
-    SIDES_RIGHT_PORT = activeAnimation->frames[activeFrame].sides_right << SIDES_RIGHT_SHIFT;
+    SIDES_LEFT_PORT = (SIDES_LEFT_PORT & ~((uint8_t)0b111 << SIDES_LEFT_SHIFT)) | activeAnimation->frames[activeFrame].sides_left << SIDES_LEFT_SHIFT;
+    SIDES_RIGHT_PORT = (SIDES_RIGHT_PORT & ~((uint8_t)0b111 << SIDES_RIGHT_SHIFT)) | activeAnimation->frames[activeFrame].sides_right << SIDES_RIGHT_SHIFT;
 
     if (++activeRow >= FRAME_ROWS) {
         activeRow = 0;
@@ -158,7 +157,7 @@ int main(void) {
     sides_init();
     matrix_init();
 
-    activeAnimation = &dot;
+    activeAnimation = &idle;
     start_timer();
 
     for (;;) {}
