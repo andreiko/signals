@@ -1,11 +1,12 @@
 # signals
 
 ## Controller board
-Schematic:
+
+### Schematic:
 ![Controller schema](controller-schema.png)
 
-Design:
+### Design:
 ![Controller board design](controller-board.png)
 
-Result:
+### Result:
 ![Controller board result](controller-result.jpg)
